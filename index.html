@@ -425,7 +425,6 @@
 
     <div class="result">
       <div class="result-value">—</div>
-      <div class="result-label">Total</div>
     </div>
 
     <div class="hint">Click anywhere to roll</div>
@@ -495,15 +494,15 @@
       restitution: 0.3,
       diceRestitution: 0.35,
 
-      // Light damping - let physics do the work
+      // Damping
       linearDamping: 0.995,
-      angularDamping: 0.98,
+      angularDamping: 0.96,
 
       // Settling thresholds
       settleSpeedThreshold: 0.1,
       settleAngSpeedThreshold: 0.15,
-      settleFlatnessThreshold: 0.995,
-      settleFramesRequired: 8,
+      settleFlatnessThreshold: 0.99,
+      settleFramesRequired: 3,
 
       // Bounce
       minBounceVelocity: 0.4,
@@ -604,59 +603,21 @@
         this.angularVelocity.multiplyScalar(PHYSICS.angularDamping);
       }
 
-      // Apply torque to tip dice off edges/corners and settle flat
-      applyStabilizingTorque(dt, contactInfo) {
-        const upWorld = new THREE.Vector3(0, 1, 0);
-        const faceNormals = [
-          new THREE.Vector3(1, 0, 0),
-          new THREE.Vector3(-1, 0, 0),
-          new THREE.Vector3(0, 1, 0),
-          new THREE.Vector3(0, -1, 0),
-          new THREE.Vector3(0, 0, 1),
-          new THREE.Vector3(0, 0, -1),
-        ];
+      // Apply natural torque from gravity on tilted die
+      applyGravityTorque(dt, contactInfo) {
+        if (!contactInfo.isOnGround || !contactInfo.lowestCorner) return;
 
-        // Find the face most aligned with up
-        let bestNormal = null;
-        let maxDot = -1;
-        for (const normal of faceNormals) {
-          const worldNormal = normal.clone().applyQuaternion(this.quaternion);
-          const dot = worldNormal.dot(upWorld);
-          if (dot > maxDot) {
-            maxDot = dot;
-            bestNormal = worldNormal;
-          }
-        }
+        // Vector from contact point to center of mass
+        const r = new THREE.Vector3().subVectors(this.position, contactInfo.lowestCorner);
 
-        // Apply torque to align that face with up
-        if (bestNormal && maxDot < 0.999) {
-          const torqueAxis = new THREE.Vector3().crossVectors(bestNormal, upWorld);
-          const torqueMagnitude = Math.asin(Math.min(1, torqueAxis.length()));
+        // Gravity force (mass = 1 for simplicity)
+        const gravityForce = new THREE.Vector3(0, -PHYSICS.gravity, 0);
 
-          if (torqueAxis.length() > 0.001) {
-            torqueAxis.normalize();
-            // Strong torque to tip dice quickly - like gravity would
-            // maxDot ~0.57 on corner, ~0.71 on edge, ~1.0 on face
-            const tiltAmount = 1 - maxDot; // 0 when flat, ~0.43 on corner
-            const stabilizeStrength = 480 + tiltAmount * 960; // 480-1440 range
-            this.angularVelocity.add(
-              torqueAxis.multiplyScalar(torqueMagnitude * stabilizeStrength * dt)
-            );
-          }
-        }
+        // Torque = r × F (cross product gives natural tipping torque)
+        const torque = new THREE.Vector3().crossVectors(r, gravityForce);
 
-        // Aggressive damping when nearly flat to settle instantly
-        if (maxDot > 0.95) {
-          // Very close to flat - slam to stop
-          this.velocity.x *= 0.3;
-          this.velocity.z *= 0.3;
-          this.angularVelocity.multiplyScalar(0.3);
-        } else if (maxDot > 0.85) {
-          // Getting flat - heavy damping
-          this.velocity.x *= 0.5;
-          this.velocity.z *= 0.5;
-          this.angularVelocity.multiplyScalar(0.5);
-        }
+        // Apply torque
+        this.angularVelocity.add(torque.multiplyScalar(dt));
       }
 
       update(dt) {
@@ -707,8 +668,8 @@
             this.velocity.y = Math.max(0, this.velocity.y);
           }
 
-          // Apply stabilizing torque when on ground
-          this.applyStabilizingTorque(dt, newContactInfo);
+          // Apply natural gravity torque when on ground
+          this.applyGravityTorque(dt, newContactInfo);
         }
 
         // Wall collisions
