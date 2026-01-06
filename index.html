@@ -229,6 +229,32 @@
     // ============ CANNON.js Physics (inline minimal version) ============
     // Using a simplified physics approach for dice
 
+    // Physics constants for realistic dice behavior
+    const PHYSICS = {
+      // Core physics
+      gravity: 28,
+      restitution: 0.3,
+      diceRestitution: 0.35,
+
+      // Light damping - let physics do the work
+      linearDamping: 0.995,
+      angularDamping: 0.98,
+
+      // Settling thresholds
+      settleSpeedThreshold: 0.1,
+      settleAngSpeedThreshold: 0.15,
+      settleFlatnessThreshold: 0.995,
+      settleFramesRequired: 8,
+
+      // Bounce
+      minBounceVelocity: 0.4,
+      bounceAngularReduction: 0.6,
+      groundFriction: 0.4,
+
+      // Collision
+      diceCollisionRadius: 0.866,
+    };
+
     class PhysicsDie {
       constructor(position) {
         this.position = new THREE.Vector3(position.x, position.y, position.z);
@@ -238,9 +264,6 @@
         this.settled = false;
         this.settleCounter = 0;
         this.size = 1;
-        this.restitution = 0.35;
-        this.friction = 0.92;
-        this.angularFriction = 0.94;
       }
 
       applyImpulse(force, torque) {
@@ -271,8 +294,65 @@
         return maxDot;
       }
 
-      // Apply torque to make die fall flat
-      applyStabilizingTorque(dt) {
+      // Get detailed ground contact information
+      getGroundContactInfo() {
+        const halfSize = this.size / 2;
+        const groundY = 0;
+        const contactThreshold = 0.05;
+
+        const corners = [
+          new THREE.Vector3(-halfSize, -halfSize, -halfSize),
+          new THREE.Vector3(-halfSize, -halfSize, halfSize),
+          new THREE.Vector3(-halfSize, halfSize, -halfSize),
+          new THREE.Vector3(-halfSize, halfSize, halfSize),
+          new THREE.Vector3(halfSize, -halfSize, -halfSize),
+          new THREE.Vector3(halfSize, -halfSize, halfSize),
+          new THREE.Vector3(halfSize, halfSize, -halfSize),
+          new THREE.Vector3(halfSize, halfSize, halfSize),
+        ];
+
+        let contactCount = 0;
+        let lowestY = Infinity;
+        let lowestCorner = null;
+
+        for (const corner of corners) {
+          const worldCorner = corner.clone()
+            .applyQuaternion(this.quaternion)
+            .add(this.position);
+
+          if (worldCorner.y < lowestY) {
+            lowestY = worldCorner.y;
+            lowestCorner = worldCorner;
+          }
+
+          if (worldCorner.y < groundY + contactThreshold) {
+            contactCount++;
+          }
+        }
+
+        return {
+          isOnGround: lowestY <= groundY + 0.01,
+          penetration: Math.max(0, groundY - lowestY),
+          contactCount,
+          lowestCorner,
+          isStable: contactCount >= 3
+        };
+      }
+
+      // Simple damping - let natural physics work
+      applyDamping() {
+        this.velocity.multiplyScalar(PHYSICS.linearDamping);
+        this.angularVelocity.multiplyScalar(PHYSICS.angularDamping);
+      }
+
+      // Apply torque to help die settle flat - only when already nearly flat
+      applyStabilizingTorque(dt, contactInfo) {
+        const flatness = this.getFlatness();
+
+        // Only apply stabilization when die is already mostly flat (> 85%)
+        // This lets natural tumbling happen first
+        if (flatness < 0.85) return;
+
         const upWorld = new THREE.Vector3(0, 1, 0);
         const faceNormals = [
           new THREE.Vector3(1, 0, 0),
@@ -302,27 +382,30 @@
 
           if (torqueAxis.length() > 0.001) {
             torqueAxis.normalize();
-            // Stronger stabilizing force when on ground and slow
-            const stabilizeStrength = 25;
+            // Strength scales with how flat we already are
+            const stabilizeStrength = 20 * (flatness - 0.85) / 0.15;
             this.angularVelocity.add(
               torqueAxis.multiplyScalar(torqueMagnitude * stabilizeStrength * dt)
             );
           }
         }
 
-        // Heavy damping when nearly flat to stop skidding
-        if (maxDot > 0.95) {
-          this.velocity.x *= 0.85;
-          this.velocity.z *= 0.85;
-          this.angularVelocity.multiplyScalar(0.85);
+        // Damping when nearly flat to prevent sliding
+        if (maxDot > 0.92) {
+          this.velocity.x *= 0.9;
+          this.velocity.z *= 0.9;
+          this.angularVelocity.multiplyScalar(0.9);
         }
       }
 
       update(dt) {
         if (this.settled) return;
 
-        // Gravity
-        this.velocity.y -= 25 * dt;
+        // Apply gravity
+        this.velocity.y -= PHYSICS.gravity * dt;
+
+        // Apply simple damping
+        this.applyDamping();
 
         // Update position
         this.position.add(this.velocity.clone().multiplyScalar(dt));
@@ -337,76 +420,66 @@
           this.quaternion.normalize();
         }
 
-        // Ground collision - check corners
-        const halfSize = this.size / 2;
-        const corners = [
-          new THREE.Vector3(-halfSize, -halfSize, -halfSize),
-          new THREE.Vector3(-halfSize, -halfSize, halfSize),
-          new THREE.Vector3(-halfSize, halfSize, -halfSize),
-          new THREE.Vector3(-halfSize, halfSize, halfSize),
-          new THREE.Vector3(halfSize, -halfSize, -halfSize),
-          new THREE.Vector3(halfSize, -halfSize, halfSize),
-          new THREE.Vector3(halfSize, halfSize, -halfSize),
-          new THREE.Vector3(halfSize, halfSize, halfSize),
-        ];
+        // Ground collision (re-check after movement)
+        const newContactInfo = this.getGroundContactInfo();
 
-        let lowestY = Infinity;
-        let lowestCorner = null;
-        for (const corner of corners) {
-          const worldCorner = corner.clone().applyQuaternion(this.quaternion).add(this.position);
-          if (worldCorner.y < lowestY) {
-            lowestY = worldCorner.y;
-            lowestCorner = worldCorner;
-          }
-        }
+        if (newContactInfo.penetration > 0) {
+          // Push up to ground level
+          this.position.y += newContactInfo.penetration;
 
-        const groundY = 0;
-        if (lowestY < groundY) {
-          // Push up
-          this.position.y += groundY - lowestY;
+          // Apply bounce if moving down fast enough
+          if (this.velocity.y < -PHYSICS.minBounceVelocity) {
+            this.velocity.y = -this.velocity.y * PHYSICS.restitution;
 
-          // Bounce
-          if (this.velocity.y < -0.5) {
-            this.velocity.y = -this.velocity.y * this.restitution;
-            this.velocity.x *= this.friction;
-            this.velocity.z *= this.friction;
-            this.angularVelocity.multiplyScalar(0.7);
+            // Apply ground friction to horizontal velocity
+            const frictionFactor = 1 - PHYSICS.groundFriction * 0.3;
+            this.velocity.x *= frictionFactor;
+            this.velocity.z *= frictionFactor;
+
+            // Reduce angular velocity on bounce
+            this.angularVelocity.multiplyScalar(PHYSICS.bounceAngularReduction);
+
+            // Reset settle counter on significant bounce
+            this.settleCounter = 0;
           } else {
-            this.velocity.y = 0;
+            // Too slow to bounce - stop vertical motion
+            this.velocity.y = Math.max(0, this.velocity.y);
           }
 
           // Apply stabilizing torque when on ground
-          this.applyStabilizingTorque(dt);
+          this.applyStabilizingTorque(dt, newContactInfo);
         }
 
         // Wall collisions
         const bounds = 4;
         if (Math.abs(this.position.x) > bounds) {
           this.position.x = Math.sign(this.position.x) * bounds;
-          this.velocity.x = -this.velocity.x * this.restitution;
+          this.velocity.x = -this.velocity.x * PHYSICS.restitution;
+          this.settleCounter = 0;
         }
         if (Math.abs(this.position.z) > bounds) {
           this.position.z = Math.sign(this.position.z) * bounds;
-          this.velocity.z = -this.velocity.z * this.restitution;
+          this.velocity.z = -this.velocity.z * PHYSICS.restitution;
+          this.settleCounter = 0;
         }
 
-        // Apply friction
-        this.velocity.multiplyScalar(0.995);
-        this.angularVelocity.multiplyScalar(this.angularFriction);
-
-        // Check if settled - must be flat AND slow
+        // Check if settled
         const speed = this.velocity.length();
         const angSpeed = this.angularVelocity.length();
         const flatness = this.getFlatness();
 
-        if (speed < 0.15 && angSpeed < 0.2 && flatness > 0.995) {
+        if (speed < PHYSICS.settleSpeedThreshold &&
+            angSpeed < PHYSICS.settleAngSpeedThreshold &&
+            flatness > PHYSICS.settleFlatnessThreshold &&
+            newContactInfo.isOnGround) {
           this.settleCounter++;
-          if (this.settleCounter > 10) {
+          if (this.settleCounter > PHYSICS.settleFramesRequired) {
             this.settled = true;
             this.snapToFace();
           }
         } else {
-          this.settleCounter = 0;
+          // Gradual decrease instead of immediate reset
+          this.settleCounter = Math.max(0, this.settleCounter - 1);
         }
       }
 
@@ -479,6 +552,179 @@
       }
     }
 
+    // ============ Dice Collision System ============
+
+    class DiceCollisionSystem {
+      constructor(physicsDice) {
+        this.dice = physicsDice;
+      }
+
+      // Get all 8 corners of a die in world space
+      getWorldCorners(die) {
+        const halfSize = die.size / 2;
+        const corners = [
+          new THREE.Vector3(-halfSize, -halfSize, -halfSize),
+          new THREE.Vector3(-halfSize, -halfSize, halfSize),
+          new THREE.Vector3(-halfSize, halfSize, -halfSize),
+          new THREE.Vector3(-halfSize, halfSize, halfSize),
+          new THREE.Vector3(halfSize, -halfSize, -halfSize),
+          new THREE.Vector3(halfSize, -halfSize, halfSize),
+          new THREE.Vector3(halfSize, halfSize, -halfSize),
+          new THREE.Vector3(halfSize, halfSize, halfSize),
+        ];
+
+        return corners.map(c =>
+          c.clone().applyQuaternion(die.quaternion).add(die.position)
+        );
+      }
+
+      // Check if a point is inside a die's OBB, return penetration info
+      getPointPenetration(point, die) {
+        const halfSize = die.size / 2;
+
+        // Transform point to die's local space
+        const localPoint = point.clone()
+          .sub(die.position)
+          .applyQuaternion(die.quaternion.clone().invert());
+
+        // Find penetration along each axis
+        const penetrations = [
+          { depth: halfSize - Math.abs(localPoint.x), normal: new THREE.Vector3(Math.sign(localPoint.x), 0, 0) },
+          { depth: halfSize - Math.abs(localPoint.y), normal: new THREE.Vector3(0, Math.sign(localPoint.y), 0) },
+          { depth: halfSize - Math.abs(localPoint.z), normal: new THREE.Vector3(0, 0, Math.sign(localPoint.z)) },
+        ];
+
+        // If any axis has negative penetration, point is outside
+        for (const p of penetrations) {
+          if (p.depth < 0) {
+            return { depth: 0, normal: null };
+          }
+        }
+
+        // Find minimum penetration axis (collision normal)
+        penetrations.sort((a, b) => a.depth - b.depth);
+        const minPen = penetrations[0];
+
+        // Transform normal back to world space
+        const worldNormal = minPen.normal.applyQuaternion(die.quaternion);
+
+        return { depth: minPen.depth, normal: worldNormal };
+      }
+
+      // Check for OBB collision between two dice
+      checkOBBCollision(dieA, dieB) {
+        const cornersA = this.getWorldCorners(dieA);
+        const cornersB = this.getWorldCorners(dieB);
+
+        let deepestPenetration = 0;
+        let collisionNormal = null;
+        let contactPoint = null;
+
+        // Check A's corners against B's OBB
+        for (const corner of cornersA) {
+          const penetration = this.getPointPenetration(corner, dieB);
+          if (penetration.depth > deepestPenetration) {
+            deepestPenetration = penetration.depth;
+            collisionNormal = penetration.normal;
+            contactPoint = corner;
+          }
+        }
+
+        // Check B's corners against A's OBB
+        for (const corner of cornersB) {
+          const penetration = this.getPointPenetration(corner, dieA);
+          if (penetration.depth > deepestPenetration) {
+            deepestPenetration = penetration.depth;
+            collisionNormal = penetration.normal ? penetration.normal.clone().negate() : null;
+            contactPoint = corner;
+          }
+        }
+
+        if (deepestPenetration > 0 && collisionNormal) {
+          return { dieA, dieB, depth: deepestPenetration, normal: collisionNormal, contactPoint };
+        }
+
+        return null;
+      }
+
+      // Resolve a collision between two dice
+      resolveCollision(collision) {
+        const { dieA, dieB, depth, normal, contactPoint } = collision;
+
+        // 1. Separate the dice (positional correction)
+        const separation = normal.clone().multiplyScalar(depth * 0.5);
+        dieA.position.add(separation);
+        dieB.position.sub(separation);
+
+        // 2. Calculate relative velocity at contact point
+        const rA = contactPoint.clone().sub(dieA.position);
+        const rB = contactPoint.clone().sub(dieB.position);
+
+        const velA = dieA.velocity.clone().add(
+          new THREE.Vector3().crossVectors(dieA.angularVelocity, rA)
+        );
+        const velB = dieB.velocity.clone().add(
+          new THREE.Vector3().crossVectors(dieB.angularVelocity, rB)
+        );
+
+        const relativeVel = velA.clone().sub(velB);
+        const normalVel = relativeVel.dot(normal);
+
+        // Only resolve if objects are moving toward each other
+        if (normalVel > 0) return;
+
+        // 3. Calculate impulse magnitude (equal mass dice)
+        const restitution = PHYSICS.diceRestitution;
+        const impulseMagnitude = -(1 + restitution) * normalVel / 2;
+
+        const impulse = normal.clone().multiplyScalar(impulseMagnitude);
+
+        // 4. Apply impulse to linear velocities
+        dieA.velocity.add(impulse);
+        dieB.velocity.sub(impulse);
+
+        // 5. Apply impulse to angular velocities
+        const angularImpulseA = new THREE.Vector3().crossVectors(rA, impulse);
+        const angularImpulseB = new THREE.Vector3().crossVectors(rB, impulse);
+
+        dieA.angularVelocity.add(angularImpulseA.multiplyScalar(0.3));
+        dieB.angularVelocity.sub(angularImpulseB.multiplyScalar(0.3));
+
+        // 6. Reset settle counters since collision occurred
+        dieA.settled = false;
+        dieA.settleCounter = 0;
+        dieB.settled = false;
+        dieB.settleCounter = 0;
+      }
+
+      // Detect and resolve all collisions
+      detectAndResolve() {
+        if (this.dice.length < 2) return;
+
+        for (let i = 0; i < this.dice.length; i++) {
+          for (let j = i + 1; j < this.dice.length; j++) {
+            const dieA = this.dice[i];
+            const dieB = this.dice[j];
+
+            // Skip if both settled
+            if (dieA.settled && dieB.settled) continue;
+
+            // Broad phase: sphere-sphere check
+            const dist = dieA.position.distanceTo(dieB.position);
+            const minDist = PHYSICS.diceCollisionRadius * 2;
+
+            if (dist < minDist) {
+              // Narrow phase: OBB collision
+              const collision = this.checkOBBCollision(dieA, dieB);
+              if (collision) {
+                this.resolveCollision(collision);
+              }
+            }
+          }
+        }
+      }
+    }
+
     // ============ Main App ============
 
     class DiceApp {
@@ -488,6 +734,7 @@
         this.physicsDice = [];
         this.diceCount = 1;
         this.isRolling = false;
+        this.collisionSystem = null;
 
         this.init();
         this.createTable();
@@ -688,6 +935,9 @@
           physicsDie.settled = true;
           this.physicsDice.push(physicsDie);
         }
+
+        // Initialize collision system
+        this.collisionSystem = new DiceCollisionSystem(this.physicsDice);
       }
 
       roll() {
@@ -701,13 +951,15 @@
         for (let i = 0; i < this.dice.length; i++) {
           const physicsDie = this.physicsDice[i];
 
-          // Reset position above the table
-          const spacing = 1.5;
+          // Reset position above the table - lower drop for faster settling
+          const spacing = 1.8; // Increased spacing to prevent immediate overlap
           const totalWidth = (this.diceCount - 1) * spacing;
-          const x = -totalWidth / 2 + i * spacing + (Math.random() - 0.5) * 0.5;
+          const x = -totalWidth / 2 + i * spacing + (Math.random() - 0.5) * 0.3;
 
-          physicsDie.position.set(x, 5 + Math.random() * 2, (Math.random() - 0.5) * 2);
-          // Random initial rotation
+          // Lower drop height (4-5 units) for faster settling
+          physicsDie.position.set(x, 4 + Math.random() * 1, (Math.random() - 0.5) * 1.5);
+
+          // Random initial rotation - good visual spin
           const randomAxis = new THREE.Vector3(
             Math.random() - 0.5,
             Math.random() - 0.5,
@@ -715,17 +967,18 @@
           ).normalize();
           physicsDie.quaternion.setFromAxisAngle(randomAxis, Math.random() * Math.PI * 2);
 
-          // Apply random impulse
+          // More controlled impulse for realistic trajectory
           const force = new THREE.Vector3(
-            (Math.random() - 0.5) * 8,
-            -5,
-            (Math.random() - 0.5) * 8
+            (Math.random() - 0.5) * 5,  // Reduced horizontal spread
+            -3,                          // Reduced downward impulse
+            (Math.random() - 0.5) * 5   // Reduced horizontal spread
           );
 
+          // Good tumbling spin
           const torque = new THREE.Vector3(
-            (Math.random() - 0.5) * 20,
-            (Math.random() - 0.5) * 20,
-            (Math.random() - 0.5) * 20
+            (Math.random() - 0.5) * 18,
+            (Math.random() - 0.5) * 12,
+            (Math.random() - 0.5) * 18
           );
 
           physicsDie.applyImpulse(force, torque);
@@ -794,11 +1047,24 @@
 
         const dt = 1 / 60;
 
-        // Update physics
-        for (let i = 0; i < this.physicsDice.length; i++) {
-          this.physicsDice[i].update(dt);
+        // Run multiple physics substeps for stability
+        const substeps = 2;
+        const subDt = dt / substeps;
 
-          // Sync mesh with physics
+        for (let step = 0; step < substeps; step++) {
+          // Update individual dice physics
+          for (let i = 0; i < this.physicsDice.length; i++) {
+            this.physicsDice[i].update(subDt);
+          }
+
+          // Resolve dice-to-dice collisions
+          if (this.collisionSystem && this.physicsDice.length > 1) {
+            this.collisionSystem.detectAndResolve();
+          }
+        }
+
+        // Sync meshes with physics
+        for (let i = 0; i < this.physicsDice.length; i++) {
           this.dice[i].position.copy(this.physicsDice[i].position);
           this.dice[i].quaternion.copy(this.physicsDice[i].quaternion);
         }
