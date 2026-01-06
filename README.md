@@ -2,6 +2,8 @@
 
 A realistic 3D dice roller with custom physics simulation, built entirely in a single HTML file.
 
+<img width="767" height="710" alt="Screenshot 2026-01-06 154531" src="https://github.com/user-attachments/assets/63048307-9f45-42d7-a4ca-a6cc0261dc5a" />
+
 ![Dice Roller](https://img.shields.io/badge/Three.js-0.160.0-black) ![No Build](https://img.shields.io/badge/build-none-green)
 
 ## Demo
