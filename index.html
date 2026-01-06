@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dice</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=DM+Sans:wght@400;500&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --felt: #1a2f23;
+      --felt-light: #243d2e;
+      --ivory: #f5f0e6;
+      --ivory-dark: #e8e0d0;
+      --gold: #c9a962;
+      --gold-dim: #8a7542;
+      --shadow: rgba(0, 0, 0, 0.4);
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--felt);
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      cursor: pointer;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    /* Felt texture overlay */
+    #canvas-container::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E");
+      opacity: 0.03;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* UI Layer */
+    .ui-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* Result display */
+    .result {
+      position: absolute;
+      top: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .result.visible {
+      opacity: 1;
+    }
+
+    .result-value {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: clamp(4rem, 12vw, 8rem);
+      font-weight: 300;
+      color: var(--ivory);
+      line-height: 1;
+      letter-spacing: -0.02em;
+      text-shadow: 0 4px 20px var(--shadow);
+    }
+
+    .result-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3em;
+      color: var(--gold-dim);
+      margin-top: 0.5rem;
+    }
+
+    /* Dice count selector */
+    .dice-selector {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    }
+
+    .dice-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--gold-dim);
+      background: transparent;
+      color: var(--gold-dim);
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.25rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-radius: 2px;
+    }
+
+    .dice-btn:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+      background: rgba(201, 169, 98, 0.1);
+    }
+
+    .dice-btn.active {
+      border-color: var(--gold);
+      color: var(--ivory);
+      background: var(--gold);
+    }
+
+    /* Hint text */
+    .hint {
+      position: absolute;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.8rem;
+      color: var(--gold-dim);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      opacity: 0.6;
+      transition: opacity 0.5s ease;
+    }
+
+    .hint.hidden {
+      opacity: 0;
+    }
+
+    /* Rolling state */
+    .rolling .hint {
+      opacity: 0;
+    }
+
+    /* Vignette */
+    .vignette {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.4) 100%);
+      pointer-events: none;
+    }
+
+    /* Loading */
+    .loading {
+      position: fixed;
+      inset: 0;
+      background: var(--felt);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      transition: opacity 0.5s ease;
+    }
+
+    .loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loading-text {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.5rem;
+      color: var(--gold-dim);
+      letter-spacing: 0.1em;
+    }
+  </style>
+</head>
+<body>
+  <div class="loading">
+    <span class="loading-text">Loading...</span>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <div class="ui-layer">
+    <div class="vignette"></div>
+
+    <div class="result">
+      <div class="result-value">—</div>
+      <div class="result-label">Total</div>
+    </div>
+
+    <div class="hint">Click anywhere to roll</div>
+
+    <div class="dice-selector">
+      <button class="dice-btn active" data-count="1">1</button>
+      <button class="dice-btn" data-count="2">2</button>
+      <button class="dice-btn" data-count="3">3</button>
+      <button class="dice-btn" data-count="4">4</button>
+      <button class="dice-btn" data-count="5">5</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+    // ============ CANNON.js Physics (inline minimal version) ============
+    // Using a simplified physics approach for dice
+
+    class PhysicsDie {
+      constructor(position) {
+        this.position = new THREE.Vector3(position.x, position.y, position.z);
+        this.velocity = new THREE.Vector3();
+        this.quaternion = new THREE.Quaternion();
+        this.angularVelocity = new THREE.Vector3();
+        this.settled = false;
+        this.settleCounter = 0;
+        this.size = 1;
+        this.restitution = 0.35;
+        this.friction = 0.92;
+        this.angularFriction = 0.94;
+      }
+
+      applyImpulse(force, torque) {
+        this.velocity.add(force);
+        this.angularVelocity.add(torque);
+        this.settled = false;
+        this.settleCounter = 0;
+      }
+
+      // Get how flat the die is (1 = perfectly flat, 0 = on corner)
+      getFlatness() {
+        const upWorld = new THREE.Vector3(0, 1, 0);
+        const faceNormals = [
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(-1, 0, 0),
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(0, -1, 0),
+          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(0, 0, -1),
+        ];
+
+        let maxDot = 0;
+        for (const normal of faceNormals) {
+          const worldNormal = normal.clone().applyQuaternion(this.quaternion);
+          const dot = Math.abs(worldNormal.dot(upWorld));
+          if (dot > maxDot) maxDot = dot;
+        }
+        return maxDot;
+      }
+
+      // Apply torque to make die fall flat
+      applyStabilizingTorque(dt) {
+        const upWorld = new THREE.Vector3(0, 1, 0);
+        const faceNormals = [
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(-1, 0, 0),
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(0, -1, 0),
+          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(0, 0, -1),
+        ];
+
+        // Find the face most aligned with up
+        let bestNormal = null;
+        let maxDot = -1;
+        for (const normal of faceNormals) {
+          const worldNormal = normal.clone().applyQuaternion(this.quaternion);
+          const dot = worldNormal.dot(upWorld);
+          if (dot > maxDot) {
+            maxDot = dot;
+            bestNormal = worldNormal;
+          }
+        }
+
+        // Apply torque to align that face with up
+        if (bestNormal && maxDot < 0.999) {
+          const torqueAxis = new THREE.Vector3().crossVectors(bestNormal, upWorld);
+          const torqueMagnitude = Math.asin(Math.min(1, torqueAxis.length()));
+
+          if (torqueAxis.length() > 0.001) {
+            torqueAxis.normalize();
+            // Stronger stabilizing force when on ground and slow
+            const stabilizeStrength = 25;
+            this.angularVelocity.add(
+              torqueAxis.multiplyScalar(torqueMagnitude * stabilizeStrength * dt)
+            );
+          }
+        }
+
+        // Heavy damping when nearly flat to stop skidding
+        if (maxDot > 0.95) {
+          this.velocity.x *= 0.85;
+          this.velocity.z *= 0.85;
+          this.angularVelocity.multiplyScalar(0.85);
+        }
+      }
+
+      update(dt) {
+        if (this.settled) return;
+
+        // Gravity
+        this.velocity.y -= 25 * dt;
+
+        // Update position
+        this.position.add(this.velocity.clone().multiplyScalar(dt));
+
+        // Update rotation using quaternion
+        const angVelLength = this.angularVelocity.length();
+        if (angVelLength > 0.0001) {
+          const axis = this.angularVelocity.clone().normalize();
+          const angle = angVelLength * dt;
+          const deltaQ = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+          this.quaternion.premultiply(deltaQ);
+          this.quaternion.normalize();
+        }
+
+        // Ground collision - check corners
+        const halfSize = this.size / 2;
+        const corners = [
+          new THREE.Vector3(-halfSize, -halfSize, -halfSize),
+          new THREE.Vector3(-halfSize, -halfSize, halfSize),
+          new THREE.Vector3(-halfSize, halfSize, -halfSize),
+          new THREE.Vector3(-halfSize, halfSize, halfSize),
+          new THREE.Vector3(halfSize, -halfSize, -halfSize),
+          new THREE.Vector3(halfSize, -halfSize, halfSize),
+          new THREE.Vector3(halfSize, halfSize, -halfSize),
+          new THREE.Vector3(halfSize, halfSize, halfSize),
+        ];
+
+        let lowestY = Infinity;
+        let lowestCorner = null;
+        for (const corner of corners) {
+          const worldCorner = corner.clone().applyQuaternion(this.quaternion).add(this.position);
+          if (worldCorner.y < lowestY) {
+            lowestY = worldCorner.y;
+            lowestCorner = worldCorner;
+          }
+        }
+
+        const groundY = 0;
+        if (lowestY < groundY) {
+          // Push up
+          this.position.y += groundY - lowestY;
+
+          // Bounce
+          if (this.velocity.y < -0.5) {
+            this.velocity.y = -this.velocity.y * this.restitution;
+            this.velocity.x *= this.friction;
+            this.velocity.z *= this.friction;
+            this.angularVelocity.multiplyScalar(0.7);
+          } else {
+            this.velocity.y = 0;
+          }
+
+          // Apply stabilizing torque when on ground
+          this.applyStabilizingTorque(dt);
+        }
+
+        // Wall collisions
+        const bounds = 4;
+        if (Math.abs(this.position.x) > bounds) {
+          this.position.x = Math.sign(this.position.x) * bounds;
+          this.velocity.x = -this.velocity.x * this.restitution;
+        }
+        if (Math.abs(this.position.z) > bounds) {
+          this.position.z = Math.sign(this.position.z) * bounds;
+          this.velocity.z = -this.velocity.z * this.restitution;
+        }
+
+        // Apply friction
+        this.velocity.multiplyScalar(0.995);
+        this.angularVelocity.multiplyScalar(this.angularFriction);
+
+        // Check if settled - must be flat AND slow
+        const speed = this.velocity.length();
+        const angSpeed = this.angularVelocity.length();
+        const flatness = this.getFlatness();
+
+        if (speed < 0.15 && angSpeed < 0.2 && flatness > 0.995) {
+          this.settleCounter++;
+          if (this.settleCounter > 10) {
+            this.settled = true;
+            this.snapToFace();
+          }
+        } else {
+          this.settleCounter = 0;
+        }
+      }
+
+      snapToFace() {
+        // Find which face is up and snap perfectly
+        const upWorld = new THREE.Vector3(0, 1, 0);
+        const faceNormals = [
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(-1, 0, 0),
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(0, -1, 0),
+          new THREE.Vector3(0, 0, 1),
+          new THREE.Vector3(0, 0, -1),
+        ];
+
+        let bestNormal = null;
+        let maxDot = -1;
+        for (const normal of faceNormals) {
+          const worldNormal = normal.clone().applyQuaternion(this.quaternion);
+          const dot = worldNormal.dot(upWorld);
+          if (dot > maxDot) {
+            maxDot = dot;
+            bestNormal = normal;
+          }
+        }
+
+        // Create quaternion that aligns bestNormal with up
+        if (bestNormal) {
+          const currentUp = bestNormal.clone().applyQuaternion(this.quaternion);
+          const rotationAxis = new THREE.Vector3().crossVectors(currentUp, upWorld);
+          if (rotationAxis.length() > 0.001) {
+            rotationAxis.normalize();
+            const angle = Math.acos(Math.min(1, currentUp.dot(upWorld)));
+            const correction = new THREE.Quaternion().setFromAxisAngle(rotationAxis, angle);
+            this.quaternion.premultiply(correction);
+            this.quaternion.normalize();
+          }
+        }
+
+        // Set position to rest flat
+        this.position.y = this.size / 2;
+        this.velocity.set(0, 0, 0);
+        this.angularVelocity.set(0, 0, 0);
+      }
+
+      getValue() {
+        // Check which face is pointing up (positive Y)
+        const faces = [
+          { dir: new THREE.Vector3(0, 1, 0), value: 1 },   // Top
+          { dir: new THREE.Vector3(0, -1, 0), value: 6 },  // Bottom
+          { dir: new THREE.Vector3(1, 0, 0), value: 3 },   // Right
+          { dir: new THREE.Vector3(-1, 0, 0), value: 4 },  // Left
+          { dir: new THREE.Vector3(0, 0, 1), value: 2 },   // Front
+          { dir: new THREE.Vector3(0, 0, -1), value: 5 },  // Back
+        ];
+
+        let maxDot = -Infinity;
+        let topValue = 1;
+
+        for (const face of faces) {
+          const transformed = face.dir.clone().applyQuaternion(this.quaternion);
+          const dot = transformed.y;
+          if (dot > maxDot) {
+            maxDot = dot;
+            topValue = face.value;
+          }
+        }
+
+        return topValue;
+      }
+    }
+
+    // ============ Main App ============
+
+    class DiceApp {
+      constructor() {
+        this.container = document.getElementById('canvas-container');
+        this.dice = [];
+        this.physicsDice = [];
+        this.diceCount = 1;
+        this.isRolling = false;
+
+        this.init();
+        this.createTable();
+        this.createDice();
+        this.setupEvents();
+        this.animate();
+
+        // Hide loading
+        setTimeout(() => {
+          document.querySelector('.loading').classList.add('hidden');
+        }, 500);
+      }
+
+      init() {
+        // Scene
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x1a2f23);
+        this.scene.fog = new THREE.Fog(0x1a2f23, 8, 20);
+
+        // Camera
+        this.camera = new THREE.PerspectiveCamera(
+          45,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          100
+        );
+        this.camera.position.set(0, 8, 8);
+        this.camera.lookAt(0, 0, 0);
+
+        // Renderer
+        this.renderer = new THREE.WebGLRenderer({
+          antialias: true,
+          alpha: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.2;
+        this.container.appendChild(this.renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xfff8e7, 0.4);
+        this.scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight(0xfff8e7, 1.5);
+        mainLight.position.set(5, 10, 5);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        mainLight.shadow.camera.near = 1;
+        mainLight.shadow.camera.far = 30;
+        mainLight.shadow.camera.left = -10;
+        mainLight.shadow.camera.right = 10;
+        mainLight.shadow.camera.top = 10;
+        mainLight.shadow.camera.bottom = -10;
+        mainLight.shadow.bias = -0.001;
+        this.scene.add(mainLight);
+
+        const fillLight = new THREE.DirectionalLight(0xc9a962, 0.3);
+        fillLight.position.set(-5, 5, -5);
+        this.scene.add(fillLight);
+
+        const rimLight = new THREE.PointLight(0xfff8e7, 0.5);
+        rimLight.position.set(0, 5, -8);
+        this.scene.add(rimLight);
+      }
+
+      createTable() {
+        // Table surface
+        const tableGeometry = new THREE.PlaneGeometry(20, 20);
+        const tableMaterial = new THREE.MeshStandardMaterial({
+          color: 0x1a2f23,
+          roughness: 0.9,
+          metalness: 0.0,
+        });
+
+        const table = new THREE.Mesh(tableGeometry, tableMaterial);
+        table.rotation.x = -Math.PI / 2;
+        table.receiveShadow = true;
+        this.scene.add(table);
+
+        // Subtle felt pattern
+        const patternCanvas = document.createElement('canvas');
+        patternCanvas.width = 512;
+        patternCanvas.height = 512;
+        const ctx = patternCanvas.getContext('2d');
+        ctx.fillStyle = '#1a2f23';
+        ctx.fillRect(0, 0, 512, 512);
+
+        for (let i = 0; i < 5000; i++) {
+          const x = Math.random() * 512;
+          const y = Math.random() * 512;
+          const brightness = Math.random() * 20 + 26;
+          ctx.fillStyle = `rgb(${brightness}, ${brightness + 15}, ${brightness + 5})`;
+          ctx.fillRect(x, y, 1, 1);
+        }
+
+        const feltTexture = new THREE.CanvasTexture(patternCanvas);
+        feltTexture.wrapS = THREE.RepeatWrapping;
+        feltTexture.wrapT = THREE.RepeatWrapping;
+        feltTexture.repeat.set(4, 4);
+        tableMaterial.map = feltTexture;
+        tableMaterial.needsUpdate = true;
+      }
+
+      createDieMesh() {
+        const geometry = new RoundedBoxGeometry(1, 1, 1, 4, 0.08);
+
+        // Create canvas textures for each face
+        const materials = [];
+        const faceValues = [3, 4, 1, 6, 2, 5]; // Right, Left, Top, Bottom, Front, Back
+
+        for (const value of faceValues) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 256;
+          canvas.height = 256;
+          const ctx = canvas.getContext('2d');
+
+          // Ivory background
+          ctx.fillStyle = '#f5f0e6';
+          ctx.fillRect(0, 0, 256, 256);
+
+          // Subtle gradient
+          const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 150);
+          gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+          gradient.addColorStop(1, 'rgba(0, 0, 0, 0.05)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, 256, 256);
+
+          // Draw pips
+          ctx.fillStyle = '#1a2f23';
+          const pipRadius = 18;
+          const positions = this.getPipPositions(value);
+
+          for (const pos of positions) {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, pipRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          const texture = new THREE.CanvasTexture(canvas);
+          texture.anisotropy = 16;
+
+          materials.push(new THREE.MeshStandardMaterial({
+            map: texture,
+            roughness: 0.3,
+            metalness: 0.0,
+          }));
+        }
+
+        const die = new THREE.Mesh(geometry, materials);
+        die.castShadow = true;
+        die.receiveShadow = true;
+
+        return die;
+      }
+
+      getPipPositions(value) {
+        const c = 128; // center
+        const o = 60;  // offset
+
+        const patterns = {
+          1: [{ x: c, y: c }],
+          2: [{ x: c - o, y: c - o }, { x: c + o, y: c + o }],
+          3: [{ x: c - o, y: c - o }, { x: c, y: c }, { x: c + o, y: c + o }],
+          4: [{ x: c - o, y: c - o }, { x: c + o, y: c - o }, { x: c - o, y: c + o }, { x: c + o, y: c + o }],
+          5: [{ x: c - o, y: c - o }, { x: c + o, y: c - o }, { x: c, y: c }, { x: c - o, y: c + o }, { x: c + o, y: c + o }],
+          6: [{ x: c - o, y: c - o }, { x: c - o, y: c }, { x: c - o, y: c + o }, { x: c + o, y: c - o }, { x: c + o, y: c }, { x: c + o, y: c + o }],
+        };
+
+        return patterns[value];
+      }
+
+      createDice() {
+        // Clear existing dice
+        for (const die of this.dice) {
+          this.scene.remove(die);
+        }
+        this.dice = [];
+        this.physicsDice = [];
+
+        // Create new dice
+        for (let i = 0; i < this.diceCount; i++) {
+          const die = this.createDieMesh();
+
+          // Position dice in a row
+          const spacing = 1.5;
+          const totalWidth = (this.diceCount - 1) * spacing;
+          const x = -totalWidth / 2 + i * spacing;
+
+          die.position.set(x, 0.5, 0);
+          this.scene.add(die);
+          this.dice.push(die);
+
+          const physicsDie = new PhysicsDie({ x, y: 0.5, z: 0 });
+          physicsDie.settled = true;
+          this.physicsDice.push(physicsDie);
+        }
+      }
+
+      roll() {
+        if (this.isRolling) return;
+
+        this.isRolling = true;
+        document.querySelector('.result').classList.remove('visible');
+        document.querySelector('.hint').classList.add('hidden');
+        document.body.classList.add('rolling');
+
+        for (let i = 0; i < this.dice.length; i++) {
+          const physicsDie = this.physicsDice[i];
+
+          // Reset position above the table
+          const spacing = 1.5;
+          const totalWidth = (this.diceCount - 1) * spacing;
+          const x = -totalWidth / 2 + i * spacing + (Math.random() - 0.5) * 0.5;
+
+          physicsDie.position.set(x, 5 + Math.random() * 2, (Math.random() - 0.5) * 2);
+          // Random initial rotation
+          const randomAxis = new THREE.Vector3(
+            Math.random() - 0.5,
+            Math.random() - 0.5,
+            Math.random() - 0.5
+          ).normalize();
+          physicsDie.quaternion.setFromAxisAngle(randomAxis, Math.random() * Math.PI * 2);
+
+          // Apply random impulse
+          const force = new THREE.Vector3(
+            (Math.random() - 0.5) * 8,
+            -5,
+            (Math.random() - 0.5) * 8
+          );
+
+          const torque = new THREE.Vector3(
+            (Math.random() - 0.5) * 20,
+            (Math.random() - 0.5) * 20,
+            (Math.random() - 0.5) * 20
+          );
+
+          physicsDie.applyImpulse(force, torque);
+        }
+      }
+
+      checkSettled() {
+        if (!this.isRolling) return;
+
+        const allSettled = this.physicsDice.every(d => d.settled);
+
+        if (allSettled) {
+          this.isRolling = false;
+          document.body.classList.remove('rolling');
+
+          // Calculate total
+          let total = 0;
+          for (const physicsDie of this.physicsDice) {
+            total += physicsDie.getValue();
+          }
+
+          // Show result
+          document.querySelector('.result-value').textContent = total;
+          document.querySelector('.result').classList.add('visible');
+        }
+      }
+
+      setupEvents() {
+        // Click to roll
+        this.container.addEventListener('click', () => this.roll());
+
+        // Spacebar to roll
+        window.addEventListener('keydown', (e) => {
+          if (e.code === 'Space') {
+            e.preventDefault();
+            this.roll();
+          }
+        });
+
+        // Dice count buttons
+        document.querySelectorAll('.dice-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            document.querySelectorAll('.dice-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            this.diceCount = parseInt(btn.dataset.count);
+            this.createDice();
+
+            document.querySelector('.result').classList.remove('visible');
+            document.querySelector('.hint').classList.remove('hidden');
+          });
+        });
+
+        // Resize
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+
+        const dt = 1 / 60;
+
+        // Update physics
+        for (let i = 0; i < this.physicsDice.length; i++) {
+          this.physicsDice[i].update(dt);
+
+          // Sync mesh with physics
+          this.dice[i].position.copy(this.physicsDice[i].position);
+          this.dice[i].quaternion.copy(this.physicsDice[i].quaternion);
+        }
+
+        this.checkSettled();
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+
+    // Start app
+    new DiceApp();
+  </script>
+</body>
+</html>
