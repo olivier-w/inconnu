@@ -1,17 +1,19 @@
 import * as THREE from 'three';
-import { PhysicsDie } from './physics.js';
-import { DiceCollisionSystem } from './collision.js';
-import { DICE_REGISTRY, DICE_TYPES, getDiceConfig, createDiceMesh } from './dice-types/index.js';
+import { PhysicsEngine } from './physics/physics-engine.js';
+import { D6 } from './physics/constants.js';
+import { createD6Body, createD6Mesh, getD6Value, applyRollImpulse } from './d6-dice.js';
 
 export class DiceApp {
   constructor() {
     this.container = document.getElementById('canvas-container');
-    this.dice = [];
-    this.physicsDice = [];
+    this.physicsEngine = new PhysicsEngine();
+
+    this.dice = [];      // Three.js meshes
+    this.bodies = [];    // Physics bodies
     this.diceCount = 1;
-    this.diceType = 'd6'; // Default to d6
+
     this.isRolling = false;
-    this.collisionSystem = null;
+    this.lastTime = performance.now();
 
     this.init();
     this.createTable();
@@ -125,31 +127,28 @@ export class DiceApp {
       this.scene.remove(die);
     }
     this.dice = [];
-    this.physicsDice = [];
-
-    // Get config for current dice type
-    const config = getDiceConfig(this.diceType);
+    this.bodies = [];
+    this.physicsEngine.clear();
 
     // Create new dice
     for (let i = 0; i < this.diceCount; i++) {
-      const die = createDiceMesh(this.diceType);
-
       // Position dice in a row
       const spacing = 1.5;
       const totalWidth = (this.diceCount - 1) * spacing;
       const x = -totalWidth / 2 + i * spacing;
 
-      die.position.set(x, config.restHeight, 0);
-      this.scene.add(die);
-      this.dice.push(die);
+      // Create mesh
+      const mesh = createD6Mesh();
+      mesh.position.set(x, D6.REST_HEIGHT, 0);
+      this.scene.add(mesh);
+      this.dice.push(mesh);
 
-      const physicsDie = new PhysicsDie({ x, y: config.restHeight, z: 0 }, config);
-      physicsDie.settled = true;
-      this.physicsDice.push(physicsDie);
+      // Create physics body
+      const body = createD6Body(x, D6.REST_HEIGHT, 0);
+      body.isSettled = true; // Start settled
+      this.bodies.push(body);
+      this.physicsEngine.addBody(body);
     }
-
-    // Initialize collision system
-    this.collisionSystem = new DiceCollisionSystem(this.physicsDice);
   }
 
   roll() {
@@ -160,77 +159,42 @@ export class DiceApp {
     document.querySelector('.hint').classList.add('hidden');
     document.body.classList.add('rolling');
 
-    const config = getDiceConfig(this.diceType);
+    // Reset and launch each die
+    for (let i = 0; i < this.bodies.length; i++) {
+      const body = this.bodies[i];
 
-    for (let i = 0; i < this.dice.length; i++) {
-      const physicsDie = this.physicsDice[i];
-
-      // Reset position above the table
+      // Calculate starting position
       const spacing = 1.8;
       const totalWidth = (this.diceCount - 1) * spacing;
       const x = -totalWidth / 2 + i * spacing + (Math.random() - 0.5) * 0.3;
-
-      // Drop height based on dice size
       const dropHeight = 4 + Math.random() * 1;
-      physicsDie.position.set(x, dropHeight, (Math.random() - 0.5) * 1.5);
+      const z = (Math.random() - 0.5) * 1.5;
 
-      // Random initial rotation
-      const randomAxis = new THREE.Vector3(
-        Math.random() - 0.5,
-        Math.random() - 0.5,
-        Math.random() - 0.5
-      ).normalize();
-      physicsDie.quaternion.setFromAxisAngle(randomAxis, Math.random() * Math.PI * 2);
+      // Reset body state
+      this.physicsEngine.resetBody(body, x, dropHeight, z);
 
-      // Apply impulse
-      const force = new THREE.Vector3(
-        (Math.random() - 0.5) * 5,
-        -3,
-        (Math.random() - 0.5) * 5
-      );
-
-      const torque = new THREE.Vector3(
-        (Math.random() - 0.5) * 18,
-        (Math.random() - 0.5) * 12,
-        (Math.random() - 0.5) * 18
-      );
-
-      physicsDie.applyImpulse(force, torque);
+      // Apply random impulse
+      applyRollImpulse(body);
     }
   }
 
   checkSettled() {
     if (!this.isRolling) return;
 
-    const allSettled = this.physicsDice.every(d => d.settled);
-
-    if (allSettled) {
+    if (this.physicsEngine.allSettled()) {
       this.isRolling = false;
       document.body.classList.remove('rolling');
 
       // Get results
-      const results = this.physicsDice.map(d => d.getValue());
+      const results = this.bodies.map(b => getD6Value(b));
+      const total = results.reduce((sum, val) => sum + val, 0);
 
       // Display result
       const resultValue = document.querySelector('.result-value');
       const resultLabel = document.querySelector('.result-label');
 
-      if (this.diceType === 'coin') {
-        // For coin, show the result (Heads/Tails)
-        if (this.diceCount === 1) {
-          resultValue.textContent = results[0];
-        } else {
-          // Multiple coins: show count of heads
-          const heads = results.filter(r => r === 'Heads').length;
-          resultValue.textContent = `${heads}H / ${this.diceCount - heads}T`;
-        }
-        resultLabel.textContent = this.diceCount === 1 ? 'Coin Flip' : `${this.diceCount} Coins`;
-      } else {
-        // For dice, show total
-        const total = results.reduce((sum, val) => sum + val, 0);
-        resultValue.textContent = total;
-        resultLabel.textContent = `${this.diceCount}${this.diceType}`;
-      }
+      resultValue.textContent = total;
+      resultLabel.textContent = `${this.diceCount}d6`;
 
       document.querySelector('.result').classList.add('visible');
     }
@@ -246,22 +210,6 @@ export class DiceApp {
         e.preventDefault();
         this.roll();
       }
-    });
-
-    // Dice type buttons
-    document.querySelectorAll('.type-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-
-        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        this.diceType = btn.dataset.type;
-        this.createDice();
-
-        document.querySelector('.result').classList.remove('visible');
-        document.querySelector('.hint').classList.remove('hidden');
-      });
     });
 
     // Dice count buttons
@@ -291,28 +239,17 @@ export class DiceApp {
   animate() {
     requestAnimationFrame(() => this.animate());
 
-    const dt = 1 / 60;
+    // Calculate delta time
+    const now = performance.now();
+    const deltaTime = (now - this.lastTime) / 1000; // Convert to seconds
+    this.lastTime = now;
 
-    // Run multiple physics substeps for stability
-    const substeps = 2;
-    const subDt = dt / substeps;
+    // Update physics (fixed timestep handled internally)
+    this.physicsEngine.update(deltaTime);
 
-    for (let step = 0; step < substeps; step++) {
-      // Update individual dice physics
-      for (let i = 0; i < this.physicsDice.length; i++) {
-        this.physicsDice[i].update(subDt);
-      }
-
-      // Resolve dice-to-dice collisions
-      if (this.collisionSystem && this.physicsDice.length > 1) {
-        this.collisionSystem.detectAndResolve();
-      }
-    }
-
-    // Sync meshes with physics
-    for (let i = 0; i < this.physicsDice.length; i++) {
-      this.dice[i].position.copy(this.physicsDice[i].position);
-      this.dice[i].quaternion.copy(this.physicsDice[i].quaternion);
+    // Sync meshes with physics bodies
+    for (let i = 0; i < this.bodies.length; i++) {
+      this.bodies[i].copyToThreeObject(this.dice[i]);
     }
 
     this.checkSettled();
