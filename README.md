@@ -8,7 +8,7 @@ A 3D dice roller with custom physics simulation supporting multiple dice types.
 
 ## Features
 
-- **6 dice types**: d4, d6, d8, d12, d20, and coin flip
+- ~~**6 dice types**: d4, d6, d8, d12, d20, and coin flip~~
 - **1-5 dice** at a time
 - **Realistic physics** with proper collision detection
 - **No build tools** required
@@ -49,7 +49,7 @@ js/
 ### Rendering with Three.js
 
 The 3D scene uses Three.js loaded via ES modules from CDN. Each dice type uses appropriate Three.js geometry:
-- Built-in polyhedra geometries for d4, d8, d12, d20
+- ~~Built-in polyhedra geometries for d4, d8, d12, d20~~
 - RoundedBoxGeometry for d6 with canvas pip textures
 - CylinderGeometry for coin with Heads/Tails textures
 
