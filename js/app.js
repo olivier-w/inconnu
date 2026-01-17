@@ -1,7 +1,17 @@
 import * as THREE from 'three';
 import { PhysicsEngine } from './physics/physics-engine.js';
-import { D6 } from './physics/constants.js';
+import { PHYSICS, D6 } from './physics/constants.js';
 import { createD6Body, createD6Mesh, getD6Value, applyRollImpulse } from './d6-dice.js';
+
+// Store default values for reset
+const PHYSICS_DEFAULTS = {
+  GRAVITY: 9.81,
+  RESTITUTION: 0.35,
+  DICE_RESTITUTION: 0.3,
+  LINEAR_DRAG: 0.01,
+  ANGULAR_DRAG: 0.02,
+  SETTLING_TIME: 0.3
+};
 
 export class DiceApp {
   constructor() {
@@ -233,6 +243,60 @@ export class DiceApp {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Settings panel
+    const settingsBtn = document.querySelector('.settings-btn');
+    const settingsPanel = document.querySelector('.settings-panel');
+    const settingsClose = document.querySelector('.settings-close');
+    const settingsReset = document.querySelector('.settings-reset');
+
+    // Toggle panel
+    settingsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      settingsPanel.classList.toggle('open');
+    });
+
+    // Close panel
+    settingsClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      settingsPanel.classList.remove('open');
+    });
+
+    // Prevent panel clicks from triggering roll
+    settingsPanel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    // Slider handlers
+    document.querySelectorAll('.setting-slider').forEach(slider => {
+      slider.addEventListener('input', (e) => {
+        const param = slider.dataset.param;
+        const value = parseFloat(slider.value);
+        PHYSICS[param] = value;
+
+        // Update displayed value
+        const valueDisplay = slider.previousElementSibling.querySelector('.setting-value');
+        if (valueDisplay) {
+          valueDisplay.textContent = value.toFixed(value < 1 ? 3 : 2).replace(/\.?0+$/, '');
+        }
+      });
+    });
+
+    // Reset button
+    settingsReset.addEventListener('click', (e) => {
+      e.stopPropagation();
+      for (const [key, value] of Object.entries(PHYSICS_DEFAULTS)) {
+        PHYSICS[key] = value;
+        const slider = document.querySelector(`.setting-slider[data-param="${key}"]`);
+        if (slider) {
+          slider.value = value;
+          const valueDisplay = slider.previousElementSibling.querySelector('.setting-value');
+          if (valueDisplay) {
+            valueDisplay.textContent = value.toFixed(value < 1 ? 3 : 2).replace(/\.?0+$/, '');
+          }
+        }
+      }
     });
   }
 

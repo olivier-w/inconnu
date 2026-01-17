@@ -444,8 +444,10 @@ canvas {
   inset: 0;
   background: var(--felt);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1.5rem;
   z-index: 100;
   transition: opacity 0.5s ease;
 }
@@ -455,9 +457,287 @@ canvas {
   pointer-events: none;
 }
 
+.loading-dice {
+  perspective: 300px;
+}
+
+.loading-dice-face {
+  width: 52px;
+  height: 52px;
+  background: var(--felt-light);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  padding: 8px;
+  gap: 2px;
+  animation: diceFloat 3s ease-in-out infinite;
+  box-shadow:
+    0 0 30px rgba(201, 169, 98, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.loading-dice-face .pip {
+  width: 8px;
+  height: 8px;
+  background: var(--gold);
+  border-radius: 50%;
+  justify-self: center;
+  align-self: center;
+  opacity: 0;
+}
+
+/* Show 5 pips pattern */
+.loading-dice-face .pip:nth-child(1),
+.loading-dice-face .pip:nth-child(3),
+.loading-dice-face .pip:nth-child(5),
+.loading-dice-face .pip:nth-child(7),
+.loading-dice-face .pip:nth-child(9) {
+  opacity: 1;
+}
+
+@keyframes diceFloat {
+  0%, 100% {
+    transform: rotateX(0deg) rotateY(0deg) translateY(0);
+    box-shadow:
+      0 0 30px rgba(201, 169, 98, 0.2),
+      0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  25% {
+    transform: rotateX(8deg) rotateY(-12deg) translateY(-8px);
+    box-shadow:
+      0 0 40px rgba(201, 169, 98, 0.35),
+      0 12px 20px rgba(0, 0, 0, 0.25);
+  }
+  50% {
+    transform: rotateX(-5deg) rotateY(8deg) translateY(-4px);
+    box-shadow:
+      0 0 35px rgba(201, 169, 98, 0.3),
+      0 8px 16px rgba(0, 0, 0, 0.28);
+  }
+  75% {
+    transform: rotateX(6deg) rotateY(-6deg) translateY(-10px);
+    box-shadow:
+      0 0 45px rgba(201, 169, 98, 0.4),
+      0 14px 22px rgba(0, 0, 0, 0.22);
+  }
+}
+
 .loading-text {
   font-family: 'Cormorant Garamond', serif;
-  font-size: 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  color: var(--gold);
+  animation: textPulse 2s ease-in-out infinite;
+}
+
+@keyframes textPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* Settings Button */
+.settings-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  padding: 10px;
+  border: 1px solid rgba(201, 169, 98, 0.25);
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(201, 169, 98, 0.03) 0%,
+    rgba(201, 169, 98, 0.08) 50%,
+    rgba(201, 169, 98, 0.03) 100%
+  );
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.3s ease;
+}
+
+.settings-btn svg {
+  width: 100%;
+  height: 100%;
   color: var(--gold-dim);
+  transition: color 0.3s ease, transform 0.3s ease;
+}
+
+.settings-btn:hover {
+  border-color: rgba(201, 169, 98, 0.5);
+  background: linear-gradient(
+    135deg,
+    rgba(201, 169, 98, 0.08) 0%,
+    rgba(201, 169, 98, 0.15) 50%,
+    rgba(201, 169, 98, 0.08) 100%
+  );
+}
+
+.settings-btn:hover svg {
+  color: var(--gold);
+  transform: rotate(30deg);
+}
+
+/* Settings Panel */
+.settings-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 280px;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    rgba(26, 47, 35, 0.95) 0%,
+    rgba(26, 47, 35, 0.98) 100%
+  );
+  border-left: 1px solid rgba(201, 169, 98, 0.2);
+  backdrop-filter: blur(20px);
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.settings-panel.open {
+  transform: translateX(0);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid rgba(201, 169, 98, 0.15);
+}
+
+.settings-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.1rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.settings-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--gold-dim);
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  line-height: 1;
+}
+
+.settings-close:hover {
+  color: var(--gold);
+}
+
+.settings-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.setting-group {
+  margin-bottom: 24px;
+}
+
+.setting-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  color: var(--ivory);
+  letter-spacing: 0.05em;
+}
+
+.setting-value {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75rem;
+  color: var(--gold-dim);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Custom Range Slider */
+.setting-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(201, 169, 98, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.setting-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--gold);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.setting-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 10px rgba(201, 169, 98, 0.5);
+}
+
+.setting-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--gold);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.setting-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 10px rgba(201, 169, 98, 0.5);
+}
+
+.setting-slider::-moz-range-track {
+  background: rgba(201, 169, 98, 0.2);
+  height: 4px;
+  border-radius: 2px;
+}
+
+/* Reset Button */
+.settings-reset {
+  width: 100%;
+  padding: 12px;
+  margin-top: 16px;
+  border: 1px solid rgba(201, 169, 98, 0.3);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold-dim);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.8rem;
   letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-reset:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(201, 169, 98, 0.1);
 }
