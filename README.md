@@ -20,7 +20,7 @@ Click anywhere or press spacebar to roll. Select dice type and count using the b
 ## Running Locally
 
 ```bash
-npx serve .
+bunx serve .
 ```
 
 Then open the displayed URL in your browser.
