@@ -741,3 +741,49 @@ canvas {
   color: var(--gold);
   background: rgba(201, 169, 98, 0.1);
 }
+
+/* Potato Mode Button */
+.potato-btn {
+  position: absolute;
+  top: 72px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(201, 169, 98, 0.25);
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(201, 169, 98, 0.03) 0%,
+    rgba(201, 169, 98, 0.08) 50%,
+    rgba(201, 169, 98, 0.03) 100%
+  );
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.3s ease;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.potato-btn:hover {
+  border-color: rgba(201, 169, 98, 0.5);
+  background: linear-gradient(
+    135deg,
+    rgba(201, 169, 98, 0.08) 0%,
+    rgba(201, 169, 98, 0.15) 50%,
+    rgba(201, 169, 98, 0.08) 100%
+  );
+  transform: scale(1.05);
+}
+
+.potato-btn.active {
+  border-color: var(--gold);
+  background: linear-gradient(
+    135deg,
+    rgba(201, 169, 98, 0.15) 0%,
+    rgba(201, 169, 98, 0.25) 50%,
+    rgba(201, 169, 98, 0.15) 100%
+  );
+  box-shadow: 0 0 15px rgba(201, 169, 98, 0.3);
+}

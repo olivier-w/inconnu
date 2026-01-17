@@ -23,6 +23,11 @@ export class DiceApp {
     this.diceCount = 1;
 
     this.isRolling = false;
+    this.potatoMode = false;
+    this.fillLight = null;
+    this.rimLight = null;
+    this.mainLight = null;
+    this.table = null;
     this.lastTime = performance.now();
 
     this.init();
@@ -70,27 +75,27 @@ export class DiceApp {
     const ambientLight = new THREE.AmbientLight(0xfff8e7, 0.4);
     this.scene.add(ambientLight);
 
-    const mainLight = new THREE.DirectionalLight(0xfff8e7, 1.5);
-    mainLight.position.set(5, 10, 5);
-    mainLight.castShadow = true;
-    mainLight.shadow.mapSize.width = 2048;
-    mainLight.shadow.mapSize.height = 2048;
-    mainLight.shadow.camera.near = 1;
-    mainLight.shadow.camera.far = 30;
-    mainLight.shadow.camera.left = -10;
-    mainLight.shadow.camera.right = 10;
-    mainLight.shadow.camera.top = 10;
-    mainLight.shadow.camera.bottom = -10;
-    mainLight.shadow.bias = -0.001;
-    this.scene.add(mainLight);
+    this.mainLight = new THREE.DirectionalLight(0xfff8e7, 1.5);
+    this.mainLight.position.set(5, 10, 5);
+    this.mainLight.castShadow = true;
+    this.mainLight.shadow.mapSize.width = 2048;
+    this.mainLight.shadow.mapSize.height = 2048;
+    this.mainLight.shadow.camera.near = 1;
+    this.mainLight.shadow.camera.far = 30;
+    this.mainLight.shadow.camera.left = -10;
+    this.mainLight.shadow.camera.right = 10;
+    this.mainLight.shadow.camera.top = 10;
+    this.mainLight.shadow.camera.bottom = -10;
+    this.mainLight.shadow.bias = -0.001;
+    this.scene.add(this.mainLight);
 
-    const fillLight = new THREE.DirectionalLight(0xc9a962, 0.3);
-    fillLight.position.set(-5, 5, -5);
-    this.scene.add(fillLight);
+    this.fillLight = new THREE.DirectionalLight(0xc9a962, 0.3);
+    this.fillLight.position.set(-5, 5, -5);
+    this.scene.add(this.fillLight);
 
-    const rimLight = new THREE.PointLight(0xfff8e7, 0.5);
-    rimLight.position.set(0, 5, -8);
-    this.scene.add(rimLight);
+    this.rimLight = new THREE.PointLight(0xfff8e7, 0.5);
+    this.rimLight.position.set(0, 5, -8);
+    this.scene.add(this.rimLight);
   }
 
   createTable() {
@@ -102,10 +107,10 @@ export class DiceApp {
       metalness: 0.0,
     });
 
-    const table = new THREE.Mesh(tableGeometry, tableMaterial);
-    table.rotation.x = -Math.PI / 2;
-    table.receiveShadow = true;
-    this.scene.add(table);
+    this.table = new THREE.Mesh(tableGeometry, tableMaterial);
+    this.table.rotation.x = -Math.PI / 2;
+    this.table.receiveShadow = true;
+    this.scene.add(this.table);
 
     // Subtle felt pattern
     const patternCanvas = document.createElement('canvas');
@@ -127,8 +132,51 @@ export class DiceApp {
     feltTexture.wrapS = THREE.RepeatWrapping;
     feltTexture.wrapT = THREE.RepeatWrapping;
     feltTexture.repeat.set(4, 4);
-    tableMaterial.map = feltTexture;
-    tableMaterial.needsUpdate = true;
+    this.table.material.map = feltTexture;
+    this.table.material.needsUpdate = true;
+  }
+
+  setPotatoMode(enabled) {
+    this.potatoMode = enabled;
+
+    if (enabled) {
+      // Disable shadows
+      this.renderer.shadowMap.enabled = false;
+      this.mainLight.castShadow = false;
+
+      // Reduce pixel ratio
+      this.renderer.setPixelRatio(1);
+
+      // Remove extra lights
+      if (this.fillLight) this.fillLight.visible = false;
+      if (this.rimLight) this.rimLight.visible = false;
+
+      // Reduce physics rate
+      PHYSICS.FIXED_TIMESTEP = 1 / 120;
+    } else {
+      // Restore shadows
+      this.renderer.shadowMap.enabled = true;
+      this.mainLight.castShadow = true;
+
+      // Restore pixel ratio
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // Restore lights
+      if (this.fillLight) this.fillLight.visible = true;
+      if (this.rimLight) this.rimLight.visible = true;
+
+      // Restore physics rate
+      PHYSICS.FIXED_TIMESTEP = 1 / 240;
+    }
+
+    // Update shadow state on all dice
+    this.dice.forEach(die => {
+      die.castShadow = !enabled;
+      die.receiveShadow = !enabled;
+    });
+
+    // Table shadow
+    this.table.receiveShadow = !enabled;
   }
 
   createDice() {
@@ -150,6 +198,8 @@ export class DiceApp {
       // Create mesh
       const mesh = createD6Mesh();
       mesh.position.set(x, D6.REST_HEIGHT, 0);
+      mesh.castShadow = !this.potatoMode;
+      mesh.receiveShadow = !this.potatoMode;
       this.scene.add(mesh);
       this.dice.push(mesh);
 
@@ -297,6 +347,15 @@ export class DiceApp {
           }
         }
       }
+    });
+
+    // Potato mode button
+    const potatoBtn = document.querySelector('.potato-btn');
+    potatoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.potatoMode = !this.potatoMode;
+      potatoBtn.classList.toggle('active', this.potatoMode);
+      this.setPotatoMode(this.potatoMode);
     });
   }
 
