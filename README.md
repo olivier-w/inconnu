@@ -33,10 +33,14 @@ The codebase is organized into ES modules:
 
 ```
 js/
-├── app.js              # Main application
-├── physics.js          # Physics simulation
-├── collision.js        # Dice-to-dice collisions
+├── app.js              # Main application, scene setup, animation loop
 ├── textures.js         # Canvas texture generation
+├── physics/            # Custom physics engine
+│   ├── physics-engine.js   # Fixed timestep simulation loop
+│   ├── rigid-body.js       # RigidBody class with quaternion rotation
+│   ├── collision.js        # Ground, wall, and dice-to-dice collisions
+│   ├── integrator.js       # Semi-implicit Euler integration
+│   └── constants.js        # Physics constants (gravity, restitution, etc.)
 └── dice-types/         # Config for each dice type
     ├── d4.js           # Tetrahedron
     ├── d6.js           # Cube with pips
@@ -61,21 +65,26 @@ The scene includes:
 
 ### Custom Physics Engine
 
-Physics simulation tailored for dice of any shape:
+A proper rigid body physics engine in `js/physics/`:
 
-**Generalized Collision**
-- Each dice type defines its own vertices and face normals
-- Bounding sphere broad-phase for performance
-- Vertex penetration narrow-phase for accuracy
+**Fixed Timestep Simulation**
+- Runs at 240Hz for stability (accumulator pattern)
+- Semi-implicit Euler integration with velocity-squared drag
+- Decoupled from render rate
+
+**Collision System**
+- Vertex-based ground collision with impulse response
+- Wall collisions with bounce and spin
+- Dice-to-dice collision using sphere approximation for stability
 
 **Quaternion Rotation**
-- Rotations use quaternions to avoid gimbal lock
-- Natural gravity torque tips dice off edges
+- All rotations use quaternions to avoid gimbal lock
+- Proper angular momentum and torque
 
 **Settling Detection**
-- Tracks velocity, angular velocity, and face alignment
-- d4 reads the bottom face (like real d4 dice)
-- Final snap aligns nearest face with ground
+- Tracks velocity and angular velocity thresholds
+- Timer-based settling (must be still for 0.3s)
+- Snaps to ground when settled
 
 ### UI Design
 
@@ -88,8 +97,8 @@ Casino-inspired aesthetic:
 ## Technical Highlights
 
 - **Zero dependencies** to install
-- **~800 lines** across modular files
-- **60 FPS** with 2 physics substeps per frame
+- **~1000 lines** across modular files
+- **60 FPS** with fixed 240Hz physics timestep
 - **Extensible** - add new dice types easily
 
 ## License
