@@ -42,7 +42,13 @@ export const PHYSICS = {
   },
 
   // Wall collision
-  WALL_RESTITUTION: 0.5
+  WALL_RESTITUTION: 0.5,
+
+  // Dice-to-dice collision
+  DICE_RESTITUTION: 0.3,           // Slightly less bouncy than ground
+  DICE_FRICTION: 0.3,              // Friction between dice
+  DICE_POSITION_CORRECTION: 0.3,   // Penetration correction factor
+  DICE_VELOCITY_THRESHOLD: 0.05    // Minimum velocity to respond
 };
 
 // D6 specific constants

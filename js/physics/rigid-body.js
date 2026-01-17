@@ -53,6 +53,10 @@ export class RigidBody {
     // Settling state
     this.settleTimer = 0;
     this.isSettled = false;
+
+    // Collision dimensions
+    this.collisionRadius = options.collisionRadius ?? D6.COLLISION_RADIUS;
+    this.halfSize = options.halfSize ?? D6.HALF_SIZE;
   }
 
   /**
@@ -161,6 +165,64 @@ export class RigidBody {
       x: rotated.x + this.position.x,
       y: rotated.y + this.position.y,
       z: rotated.z + this.position.z
+    };
+  }
+
+  /**
+   * Transform a world space point to local space
+   * Inverse of localToWorld
+   */
+  worldToLocal(worldPoint) {
+    // Translate to body origin
+    const translated = {
+      x: worldPoint.x - this.position.x,
+      y: worldPoint.y - this.position.y,
+      z: worldPoint.z - this.position.z
+    };
+
+    // Rotate by inverse quaternion (conjugate for unit quaternion)
+    const q = this.quaternion;
+    const v = translated;
+
+    // Conjugate: q* = (w, -x, -y, -z)
+    // Compute q* * v * q
+    const qConj = { w: q.w, x: -q.x, y: -q.y, z: -q.z };
+
+    // First: qConj * v
+    const qv = {
+      w: -(qConj.x * v.x + qConj.y * v.y + qConj.z * v.z),
+      x: qConj.w * v.x + qConj.y * v.z - qConj.z * v.y,
+      y: qConj.w * v.y + qConj.z * v.x - qConj.x * v.z,
+      z: qConj.w * v.z + qConj.x * v.y - qConj.y * v.x
+    };
+
+    // Then: (qConj * v) * q
+    return {
+      x: qv.w * (-q.x) + qv.x * q.w + qv.y * (-q.z) - qv.z * (-q.y),
+      y: qv.w * (-q.y) + qv.y * q.w + qv.z * (-q.x) - qv.x * (-q.z),
+      z: qv.w * (-q.z) + qv.z * q.w + qv.x * (-q.y) - qv.y * (-q.x)
+    };
+  }
+
+  /**
+   * Rotate a direction vector from local to world space (no translation)
+   */
+  localToWorldDirection(localDir) {
+    const q = this.quaternion;
+    const v = localDir;
+
+    // q * v * q⁻¹
+    const qv = {
+      w: -(q.x * v.x + q.y * v.y + q.z * v.z),
+      x: q.w * v.x + q.y * v.z - q.z * v.y,
+      y: q.w * v.y + q.z * v.x - q.x * v.z,
+      z: q.w * v.z + q.x * v.y - q.y * v.x
+    };
+
+    return {
+      x: qv.w * (-q.x) + qv.x * q.w + qv.y * (-q.z) - qv.z * (-q.y),
+      y: qv.w * (-q.y) + qv.y * q.w + qv.z * (-q.x) - qv.x * (-q.z),
+      z: qv.w * (-q.z) + qv.z * q.w + qv.x * (-q.y) - qv.y * (-q.x)
     };
   }
 

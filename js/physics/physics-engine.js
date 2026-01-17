@@ -1,7 +1,7 @@
 import { PHYSICS } from './constants.js';
 import { RigidBody } from './rigid-body.js';
 import { integrate } from './integrator.js';
-import { resolveGroundCollision, resolveWallCollisions } from './collision.js';
+import { resolveGroundCollision, resolveWallCollisions, resolveDiceCollisions } from './collision.js';
 
 /**
  * Fixed timestep physics engine
@@ -63,19 +63,20 @@ export class PhysicsEngine {
    * Single physics step at fixed timestep
    */
   step(dt) {
+    // Phase 1: Integration
     for (const body of this.bodies) {
       if (body.isSettled) continue;
-
-      // Integration (applies gravity, drag, updates position/rotation)
       integrate(body, dt);
+    }
 
-      // Ground collision
+    // Phase 2: Dice-to-dice collisions
+    resolveDiceCollisions(this.bodies);
+
+    // Phase 3: Environment collisions and settling
+    for (const body of this.bodies) {
+      if (body.isSettled) continue;
       resolveGroundCollision(body);
-
-      // Wall collision
       resolveWallCollisions(body);
-
-      // Check settling
       this.checkSettling(body, dt);
     }
   }

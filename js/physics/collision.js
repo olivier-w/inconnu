@@ -212,3 +212,116 @@ export function resolveWallCollisions(body) {
     }
   }
 }
+
+/**
+ * Resolve collisions between all dice pairs
+ * Uses sphere-based collision for simplicity and stability
+ */
+export function resolveDiceCollisions(bodies) {
+  // Check all pairs
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      const bodyA = bodies[i];
+      const bodyB = bodies[j];
+
+      // Skip if both are settled
+      if (bodyA.isSettled && bodyB.isSettled) continue;
+
+      // Use sphere collision for stability
+      resolveSphereCollision(bodyA, bodyB);
+    }
+  }
+}
+
+/**
+ * Sphere-based collision between two dice
+ * More stable than vertex-based for resting contacts
+ */
+function resolveSphereCollision(bodyA, bodyB) {
+  const dx = bodyB.position.x - bodyA.position.x;
+  const dy = bodyB.position.y - bodyA.position.y;
+  const dz = bodyB.position.z - bodyA.position.z;
+  const distSq = dx * dx + dy * dy + dz * dz;
+
+  // Use slightly smaller radius for collision (half size * sqrt(2) for face-to-face)
+  const radiusA = bodyA.halfSize * 1.3;
+  const radiusB = bodyB.halfSize * 1.3;
+  const minDist = radiusA + radiusB;
+
+  if (distSq >= minDist * minDist) return;
+  if (distSq < 0.0001) return; // Prevent division by zero
+
+  const dist = Math.sqrt(distSq);
+  const penetration = minDist - dist;
+
+  // Normal from A to B
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const nz = dz / dist;
+
+  // Relative velocity
+  const relVelX = bodyA.velocity.x - bodyB.velocity.x;
+  const relVelY = bodyA.velocity.y - bodyB.velocity.y;
+  const relVelZ = bodyA.velocity.z - bodyB.velocity.z;
+  const relVelN = relVelX * nx + relVelY * ny + relVelZ * nz;
+
+  // Calculate relative speed
+  const relSpeed = Math.sqrt(relVelX * relVelX + relVelY * relVelY + relVelZ * relVelZ);
+
+  // Wake up settled bodies only if hit hard enough
+  const wakeThreshold = 0.5;
+  if (relSpeed > wakeThreshold) {
+    if (bodyA.isSettled) {
+      bodyA.isSettled = false;
+      bodyA.settleTimer = 0;
+    }
+    if (bodyB.isSettled) {
+      bodyB.isSettled = false;
+      bodyB.settleTimer = 0;
+    }
+  }
+
+  // Only apply impulse if approaching fast enough
+  if (relVelN < -PHYSICS.DICE_VELOCITY_THRESHOLD) {
+    // Simple impulse response (center of mass only for stability)
+    const e = PHYSICS.DICE_RESTITUTION;
+    const totalInvMass = bodyA.inverseMass + bodyB.inverseMass;
+    const j = -(1 + e) * relVelN / totalInvMass;
+
+    // Apply impulse
+    const impulseX = j * nx;
+    const impulseY = j * ny;
+    const impulseZ = j * nz;
+
+    bodyA.velocity.x += impulseX * bodyA.inverseMass;
+    bodyA.velocity.y += impulseY * bodyA.inverseMass;
+    bodyA.velocity.z += impulseZ * bodyA.inverseMass;
+
+    bodyB.velocity.x -= impulseX * bodyB.inverseMass;
+    bodyB.velocity.y -= impulseY * bodyB.inverseMass;
+    bodyB.velocity.z -= impulseZ * bodyB.inverseMass;
+
+    // Add some angular velocity from collision
+    const spinFactor = 0.3;
+    bodyA.angularVelocity.x += (ny * nz) * j * spinFactor;
+    bodyA.angularVelocity.z += (nx * ny) * j * spinFactor;
+    bodyB.angularVelocity.x -= (ny * nz) * j * spinFactor;
+    bodyB.angularVelocity.z -= (nx * ny) * j * spinFactor;
+  }
+
+  // Position correction - push apart gently
+  if (penetration > 0.001) {
+    const correction = penetration * 0.3; // Gentle correction
+    const ratioA = bodyA.inverseMass / (bodyA.inverseMass + bodyB.inverseMass);
+    const ratioB = bodyB.inverseMass / (bodyA.inverseMass + bodyB.inverseMass);
+
+    bodyA.position.x -= nx * correction * ratioA;
+    bodyA.position.y -= ny * correction * ratioA;
+    bodyA.position.z -= nz * correction * ratioA;
+
+    bodyB.position.x += nx * correction * ratioB;
+    bodyB.position.y += ny * correction * ratioB;
+    bodyB.position.z += nz * correction * ratioB;
+  }
+}
+
